@@ -1,0 +1,131 @@
+Option Explicit
+
+Private Declare Function CommDlgExtendedError Lib "COMDLG32" () As Long
+
+Private Declare Function lstrlen Lib "Kernel32" Alias "lstrlenA" (ByVal lpString As String) As Long
+
+Private Const MAX_PATH = 260
+Private Const MAX_FILE = 260
+
+Private Type OPENFILENAME
+    lStructSize As Long          ' UDT length
+    hWndOwner As Long            ' Owner
+    hInstance As Long            ' Ignored (used only by templates)
+    lpstrFilter As String        ' Filter
+    lpstrCustomFilter As String  ' Ignored
+    nMaxCustFilter As Long       ' Ignored
+    nFilterIndex As Long         ' FilterIndex
+    lpstrFile As String          ' FileName
+    nMaxFile As Long             ' Handled internally
+    lpstrFileTitle As String     ' FileTitle
+    nMaxFileTitle As Long        ' Handled internally
+    lpstrInitialDir As String    ' InitDir
+    lpstrTitle As String         ' Dialog Title
+    Flags As Long                ' Flags
+    nFileOffset As Integer       ' Ignored
+    nFileExtension As Integer    ' Ignored
+    lpstrDefExt As String        ' DefaultExt
+    lCustData As Long            ' Ignored (needed for hooks)
+    lpfnHook As Long             ' Ignored
+    lpTemplateName As Long       ' Ignored
+End Type
+
+
+Public Enum ENUMOpenFile
+    OFN_READONLY = &H1
+    OFN_OVERWRITEPROMPT = &H2
+    OFN_HIDEREADONLY = &H4
+    OFN_NOCHANGEDIR = &H8
+    OFN_SHOWHELP = &H10
+    OFN_ENABLEHOOK = &H20
+    OFN_ENABLETEMPLATE = &H40
+    OFN_ENABLETEMPLATEHANDLE = &H80
+    OFN_NOVALIDATE = &H100
+    OFN_ALLOWMULTISELECT = &H200
+    OFN_EXTENSIONDIFFERENT = &H400
+    OFN_PATHMUSTEXIST = &H800
+    OFN_FILEMUSTEXIST = &H1000
+    OFN_CREATEPROMPT = &H2000
+    OFN_SHAREAWARE = &H4000
+    OFN_NOREADONLYRETURN = &H8000&
+    OFN_NOTESTFILECREATE = &H10000
+    OFN_NONETWORKBUTTON = &H20000
+    OFN_NOLONGNAMES = &H40000
+    OFN_EXPLORER = &H80000
+    OFN_NODEREFERENCELINKS = &H100000
+    OFN_LONGNAMES = &H200000
+End Enum
+
+Private Declare Function GetOpenFileName Lib "COMDLG32" Alias "GetOpenFileNameA" (File As OPENFILENAME) As Long
+
+Dim m_lExtendedError As Long
+
+' If parameter MultiSelect is True, dialog will be of Explorer style
+Function ShowOpen(Optional Owner As Long = 0&, Optional FileName As String, Optional Filter As String = "All (*.*)| *.*", Optional MultiSelect As Boolean = False, Optional FileMustExist As Boolean = True, Optional ReadOnly As Boolean = False, Optional HideReadOnly As Boolean = False, Optional FilterIndex As Long = 1, Optional InitDir As String, Optional DefaultExt As String = "", Optional FileTitle As String, Optional DlgTitle As String) As String
+    Dim typOpenFile As OPENFILENAME
+    Dim s As String
+    Dim ch As String
+    Dim i As Integer
+    Dim mResult
+    
+    m_lExtendedError = 0
+
+    With typOpenFile
+        .lStructSize = Len(typOpenFile)
+    
+          ' Add in specific flags and strip out non-VB flags
+        .Flags = (-FileMustExist * OFN_FILEMUSTEXIST) Or _
+             (-MultiSelect * OFN_ALLOWMULTISELECT) Or _
+             (-ReadOnly * OFN_READONLY) Or _
+             (-HideReadOnly * OFN_HIDEREADONLY) Or _
+             (.Flags And CLng(Not (OFN_ENABLEHOOK Or OFN_ENABLETEMPLATE)))
+        .hWndOwner = Owner
+        .lpstrInitialDir = InitDir
+        .lpstrDefExt = DefaultExt
+        .lpstrTitle = DlgTitle
+        
+          ' If you are to hook, you can instead set the flags similar to below
+        '.flags = .flags Or OFN_EXPLORER Or OFN_ENABLEHOOK
+        '.lpfnHook = GetAddressofFunction_DialogEx(AddressOf DialogExCallbackProc)
+
+          ' To make Windows-style filter, replace | and : with nulls
+        For i = 1 To Len(Filter)
+            ch = Mid$(Filter, i, 1)
+            If ch = "|" Or ch = ":" Then
+                 s = s & vbNullChar
+            Else
+                 s = s & ch
+            End If
+        Next
+    
+           ' Put double null at end
+        s = s & vbNullChar & vbNullChar
+        .lpstrFilter = s
+        .nFilterIndex = FilterIndex
+
+           ' Pad file and file title buffers to maximum path
+        s = FileName & String$(MAX_PATH - Len(FileName), 0)
+        .lpstrFile = s
+        .nMaxFile = MAX_PATH
+        s = FileTitle & String$(MAX_FILE - Len(FileTitle), 0)
+        .lpstrFileTitle = s
+        .nMaxFileTitle = MAX_FILE
+    
+        mResult = GetOpenFileName(typOpenFile)
+        If mResult = 1 Then
+             FileName = StrZToStr(.lpstrFile)
+               '  If you initiate the variables, you can return the value(s)
+               'FileTitle = StrZToStr(.lpstrFileTitle)
+        Else
+             FileName = ""
+             If mResult <> 0 Then              ' 0 is Cancel, else extended error
+                  m_lExtendedError = CommDlgExtendedError()
+             End If
+        End If
+    End With
+    ShowOpen = FileName
+End Function
+
+Private Function StrZToStr(s As String) As String
+    StrZToStr = Left$(s, lstrlen(s))
+End Function
